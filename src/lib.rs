@@ -25,6 +25,12 @@ enum Command {
     Rollback  = 0x08,
     Reboot    = 0x09
 }
+impl Into<u8> for Command {
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
+
 
 #[repr(u8)]
 pub enum Color {
@@ -81,6 +87,7 @@ impl Into<u8> for SJogFlags {
 
 
 
+#[derive(Copy,Clone,Debug)]
 pub struct ServoId(u8);
 impl ServoId {
     const DEFAULT_SERVO_ID:u8 = 0xFD;
@@ -104,7 +111,18 @@ impl From<ServoId> for u8 {
 
 
 pub struct IDSkip(bool);
+impl Into<u8> for IDSkip {
+    fn into(self) -> u8 {
+        self.0 as u8
+    }
+}
+
 pub struct BaudSkip(bool);
+impl Into<u8> for BaudSkip {
+    fn into(self) -> u8 {
+        self.0 as u8
+    }
+}
 
 
 const HEADER_LEN:usize = 7;
@@ -150,37 +168,11 @@ where S: Write<u8> {
     #[inline]
     pub fn send_eep_write_bytes<A>(&mut self, servo_id: ServoId, addr: A, data: &[u8]) -> Result<(),S::Error> 
     where A: Into<EEPAddress> {
-        // // It's a bug to try to write more than 214 bytes of data.
-        // assert!(data.len() < 215);
-
         self.send_eep_write_bytes_raw(servo_id, addr.into(), data)        
     }
 
     pub fn send_eep_write_bytes_raw(&mut self, servo_id: ServoId, addr: EEPAddress, data: &[u8]) -> Result<(),S::Error> {
-
-        let data_len:u8 = data.len() as u8;
-
-        self.packet_header[Self::CMD_INDEX] = Command::EEPWrite as u8;
-        self.packet_header[Self::PID_INDEX] = servo_id.into();
-        self.packet_header[Self::LEN_INDEX] = (Self::HEADER_LEN as u8) + 2 + data_len;
-
-        self.data[0] = addr.into();
-        self.data[1] = data_len;
-
-        self.encode_checksum_extra(2,data);
-
-        for b in self.packet_header {
-            nb::block!( self.serial.write(b) )?;
-        }
-        nb::block!( self.serial.write(self.data[0]) )?;
-        nb::block!( self.serial.write(self.data[1]) )?;
-        for &b in data {
-            nb::block!( self.serial.write(b) )?;
-        }
-
-        nb::block!( self.serial.flush() )?;
-
-        Ok( () )
+        self.send_message_write_bytes( servo_id, Command::EEPWrite, addr.into(), data )
     }
 
     #[inline]
@@ -189,18 +181,8 @@ where S: Write<u8> {
     }
 
     pub fn send_eep_read_raw(&mut self, servo_id: ServoId, addr: EEPAddress, byte_count: u8) -> Result<(),S::Error> {
-        const DATA_LEN:usize = 2;
-
-        self.packet_header[Self::CMD_INDEX] = Command::EEPRead as u8;
-        self.packet_header[Self::PID_INDEX] = servo_id.into();
-        self.packet_header[Self::LEN_INDEX] = (Self::HEADER_LEN + DATA_LEN) as u8;
-
-        self.data[0] = addr.into();
-        self.data[1] = byte_count;
-
-        self.send::<DATA_LEN>()
+        self.send_message_9( servo_id, Command::EEPRead, addr.into(), byte_count )
     }
-
 
     #[inline]
     pub fn send_ram_write<V,A:WritableAddress<V>>(&mut self, servo_id: ServoId, addr: A, data: V) -> Result<(),S::Error> 
@@ -215,33 +197,7 @@ where S: Write<u8> {
     }
 
     pub fn send_ram_write_bytes_raw(&mut self, servo_id: ServoId, addr: Address, data: &[u8]) -> Result<(),S::Error> {
-
-        // // It's a bug to try to write more than 214 bytes of data.
-        // assert!(data.len() < 215);
-
-        let data_len:u8 = data.len() as u8;
-
-        self.packet_header[Self::CMD_INDEX] = Command::RAMWrite as u8;
-        self.packet_header[Self::PID_INDEX] = servo_id.into();
-        self.packet_header[Self::LEN_INDEX] = (Self::HEADER_LEN as u8) + 2 + data_len;
-
-        self.data[0] = addr.into();
-        self.data[1] = data_len;
-
-        self.encode_checksum_extra(2,data);
-
-        for b in self.packet_header {
-            nb::block!( self.serial.write(b) )?;
-        }
-        nb::block!( self.serial.write(self.data[0]) )?;
-        nb::block!( self.serial.write(self.data[1]) )?;
-        for &b in data {
-            nb::block!( self.serial.write(b) )?;
-        }
-
-        nb::block!( self.serial.flush() )?;
-
-        Ok( () )
+        self.send_message_write_bytes( servo_id, Command::RAMWrite, addr.into(), data)
     }
 
 
@@ -250,100 +206,107 @@ where S: Write<u8> {
         self.send_ram_read_raw(servo_id, addr.into(), core::mem::size_of::<T::Value>() as u8)
     }
 
+    #[inline]
     pub fn send_ram_read_raw(&mut self, servo_id: ServoId, addr: Address, byte_count: u8) -> Result<(),S::Error> {
-        const DATA_LEN:usize = 2;
-
-        self.packet_header[Self::CMD_INDEX] = Command::RAMRead as u8;
-        self.packet_header[Self::PID_INDEX] = servo_id.into();
-        self.packet_header[Self::LEN_INDEX] = (Self::HEADER_LEN + DATA_LEN) as u8;
-
-        self.data[0] = addr.into();
-        self.data[1] = byte_count;
-
-        self.send::<DATA_LEN>()
+        self.send_message_9( servo_id, Command::RAMRead, addr.into(), byte_count )
     }
 
     pub fn send_sjog_position(&mut self, servo_id: ServoId, position: u16, playtime: u8, color: Color )  -> Result<(),S::Error> {
-        let servo_id:u8 = servo_id.into();
-        const DATA_LEN:usize = 5;
-
-        self.packet_header[Self::CMD_INDEX] = Command::SJog as u8;
-        self.packet_header[Self::PID_INDEX] = servo_id;
-        self.packet_header[Self::LEN_INDEX] = (Self::HEADER_LEN + DATA_LEN) as u8;
-
-        self.data[0] = playtime as u8;
-        self.data[1] = (position & 0xFF) as u8;
-        self.data[2] = (position >> 8) as u8;
-        self.data[3] = SJogFlags::new( JogMode::Position, color).into();
-        self.data[4] = servo_id;
-
-        self.send::<DATA_LEN>()
+        let position_bytes = position.to_le_bytes();
+        let flags = SJogFlags::new( JogMode::Position, color).into();
+        self.send_message_13( servo_id, Command::SJog, playtime, position_bytes[0], position_bytes[1], flags, servo_id.into() )
     }
 
     pub fn send_sjog_continuous(&mut self, servo_id: ServoId, pwm: u16, playtime: u8, color: Color )  -> Result<(),S::Error> {
-        const DATA_LEN:usize = 5;
-
-        let servo_id:u8 = servo_id.into();
-
-        self.packet_header[Self::CMD_INDEX] = Command::SJog as u8;
-        self.packet_header[Self::PID_INDEX] = servo_id;
-        self.packet_header[Self::LEN_INDEX] = (Self::HEADER_LEN  + DATA_LEN) as u8;
-
-        self.data[0] = playtime as u8;
-        self.data[1] = (pwm & 0xFF) as u8;
-        self.data[2] = (pwm >> 8) as u8;
-        self.data[3] = SJogFlags::new( JogMode::Velocity, color).into();
-        self.data[4] = servo_id;
-
-        self.send::<DATA_LEN>( )
+        let pwm_bytes = pwm.to_le_bytes();
+        let flags = SJogFlags::new( JogMode::Velocity, color).into();
+        self.send_message_13( servo_id, Command::SJog, playtime, pwm_bytes[0], pwm_bytes[1], flags, servo_id.into() )
     }
 
     pub fn send_stat(&mut self, servo_id: ServoId) -> Result<(),S::Error> {
-        self.packet_header[Self::CMD_INDEX] = Command::Stat as u8;
-        self.packet_header[Self::PID_INDEX] = servo_id.into();
-        self.packet_header[Self::LEN_INDEX] = Self::HEADER_LEN as u8;
-
-        self.send::<0>()
+        self.send_message_7( servo_id, Command::Stat )
     }
 
     pub fn send_rollback(&mut self, servo_id: ServoId, id_skip: IDSkip, baud_skip: BaudSkip ) -> Result<(),S::Error> {
-        const DATA_LEN:usize = 2;
-
-        self.packet_header[Self::CMD_INDEX] = Command::Rollback as u8;
-        self.packet_header[Self::PID_INDEX] = servo_id.into();
-        self.packet_header[Self::LEN_INDEX] = (Self::HEADER_LEN + DATA_LEN) as u8;
-
-        self.data[0] = id_skip.0 as u8;
-        self.data[1] = baud_skip.0 as u8;
-
-        self.send::<DATA_LEN>()
+        self.send_message_9(servo_id, Command::Rollback, id_skip.into(), baud_skip.into() )
     }
 
+    #[inline]
     pub fn send_reboot(&mut self, servo_id: ServoId) -> Result<(),S::Error>{
-        self.packet_header[Self::CMD_INDEX] = Command::Reboot as u8;
+        self.send_message_7( servo_id, Command::Reboot )
+    }
+
+    fn send_message_7(&mut self, servo_id: ServoId, command: Command) -> Result<(),S::Error> {
+        self.packet_header[Self::CMD_INDEX] = command.into();
         self.packet_header[Self::PID_INDEX] = servo_id.into();
         self.packet_header[Self::LEN_INDEX] = Self::HEADER_LEN as u8;
 
         self.send::<0>()
     }
 
-    fn encode_checksum<const N: usize>( &mut self ) {
-        let mut cs1 = self.packet_header[2]^self.packet_header[3]^self.packet_header[4];
-        for k in 0..N {
-            cs1 = cs1 ^ self.data[ usize::from(k) ];
-        }
-        cs1 = cs1 & 0xFE;
-        let cs2 = (!(cs1)) & 0xFE;
-        self.packet_header[Self::CS1_INDEX] = cs1;
-        self.packet_header[Self::CS2_INDEX] = cs2;
+
+    fn send_message_9(&mut self, servo_id: ServoId, command: Command, data0: u8, data1: u8 ) -> Result<(),S::Error>
+
+    {
+        self.packet_header[Self::CMD_INDEX] = command.into();
+        self.packet_header[Self::PID_INDEX] = servo_id.into();
+        self.packet_header[Self::LEN_INDEX] = (Self::HEADER_LEN as u8) + 2;
+        self.data[0] = data0;
+        self.data[1] = data1;
+
+        self.send::<2>()
     }
 
-    fn encode_checksum_extra(&mut self, p: u8, extra: &[u8]) {
+    fn send_message_13(&mut self, servo_id: ServoId, command: Command, data0: u8, data1: u8, data2: u8, data3: u8, data4: u8 )
+        -> Result<(),S::Error>
+     {
+        self.packet_header[Self::CMD_INDEX] = command.into();
+        self.packet_header[Self::PID_INDEX] = servo_id.into();
+        self.packet_header[Self::LEN_INDEX] = (Self::HEADER_LEN as u8) + 5;
+        self.data[0] = data0;
+        self.data[1] = data1;
+        self.data[2] = data2;
+        self.data[3] = data3;
+        self.data[4] = data4;
+
+        self.send::<5>()
+    }
+
+    fn send_message_write_bytes(&mut self, servo_id: ServoId, command: Command, addr: u8, bytes: &[u8]) 
+        ->Result<(),S::Error>
+      {
+        let data_len:u8 = bytes.len() as u8;
+
+        self.packet_header[Self::CMD_INDEX] = command.into();
+        self.packet_header[Self::PID_INDEX] = servo_id.into();
+        self.packet_header[Self::LEN_INDEX] = (Self::HEADER_LEN as u8) + 2 + data_len;
+
+        self.data[0] = addr.into();
+        self.data[1] = data_len;
+
+        self.encode_checksum_write_bytes(bytes);
+
+        for b in self.packet_header {
+            nb::block!( self.serial.write(b) )?;
+        }
+        nb::block!( self.serial.write(self.data[0]) )?;
+        nb::block!( self.serial.write(self.data[1]) )?;
+        for &b in bytes {
+            nb::block!( self.serial.write(b) )?;
+        }
+
+        nb::block!( self.serial.flush() )?;
+
+        Ok( () )
+    }
+
+    fn encode_checksum_write_bytes(&mut self, bytes: &[u8]) {
         let mut cs1 = self.packet_header[2]^self.packet_header[3]^self.packet_header[4];
-        for k in 0..p {
+        // The first two bytes of self.data contain the address and data length.
+        for k in 0..2_usize {
             cs1 = cs1 ^ self.data[ usize::from(k) ];
         }
-        for b in extra {
+        for b in bytes {
             cs1 = cs1 ^ b;
         }
 
@@ -354,8 +317,17 @@ where S: Write<u8> {
     }
 
     fn send<const N: usize>(&mut self) -> Result<(),S::Error> {
-        self.encode_checksum::<N>();
+        // Compute checksum
+        let mut cs1 = self.packet_header[2]^self.packet_header[3]^self.packet_header[4];
+        for k in 0..N {
+            cs1 = cs1 ^ self.data[ usize::from(k) ];
+        }
+        cs1 = cs1 & 0xFE;
+        let cs2 = (!(cs1)) & 0xFE;
+        self.packet_header[Self::CS1_INDEX] = cs1;
+        self.packet_header[Self::CS2_INDEX] = cs2;
 
+        // Send the packet.
         for b in self.packet_header {
             nb::block!( self.serial.write(b) )?;
         }

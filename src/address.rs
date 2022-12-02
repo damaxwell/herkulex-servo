@@ -74,8 +74,7 @@ pub enum AddressU16 {
     AbsolutePosition = 60,
     DifferentialPosition = 62,
     Pwm = 64,
-    AbsoluteGoalPosition = 68,
-    AbsoluteDesiredTrajectoryPosition = 70,
+    AbsoluteGoalPosition = 68
 }
 
 impl Into<u8> for AddressU16 {
