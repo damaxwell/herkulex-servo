@@ -61,6 +61,17 @@ impl Into<u8> for Color {
     }
 }
 
+#[repr(u8)]
+pub enum Torque {
+    FreeMoving = 0x00,
+    BrakeEnabled = 0x40,
+    Powered = 0x60
+}
+impl Into<u8> for Torque {
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
 
 
 #[repr(u8)]
@@ -366,46 +377,13 @@ where S: Write<u8> {
         self.send_ram_write( servo, AddressU8::LEDControl, color.into() )
     }
 
-    pub fn set_torque_on(&mut self, servo: ServoId) -> Result<(),S::Error>{
-        self.send_ram_write( servo, AddressU8::TorqueControl, 0x60)
+    pub fn set_torque(&mut self, servo: ServoId, torque: Torque) -> Result<(),S::Error>{
+        self.send_ram_write( servo, AddressU8::TorqueControl, torque.into())
     }
 
     pub fn set_position(&mut self, servo_id: ServoId, position: u16, playtime: Ticks, color: Color) -> Result<(),S::Error> {
         self.send_sjog_position( servo_id, position, playtime, color )
     }
-
-    // pub fn set_position(&mut self, servo_id: ServoId, pos: u16) -> Result<(),S::Error> {
-    //     let servo_id:u8 = servo_id.into();
-    //     self.packet_header[Self::CMD_INDEX] = Command::SJog as u8;
-    //     self.packet_header[Self::PID_INDEX] = servo_id;
-    //     self.packet_header[Self::LEN_INDEX] = (Self::HEADER_LEN as u8) + 5;
-
-    //     let playtime = 60;
-
-    //     let jog_lsb = (pos & 0xFF) as u8;
-    //     let jog_msb = ((pos >> 8) & 0xFF) as u8;
-
-    //     let set = 0x04;
-
-    //     self.data[0] = playtime;
-    //     self.data[1] = jog_lsb;
-    //     self.data[2] = jog_msb;
-    //     self.data[3] = set;
-    //     self.data[4] = servo_id;
-
-    //     self.encode_checksum(5);
-
-    //     for b in self.packet_header {
-    //         nb::block!( self.serial.write(b) )?;
-    //     }
-    //     nb::block!( self.serial.write(self.data[0]) )?;
-    //     nb::block!( self.serial.write(self.data[1]) )?;
-    //     nb::block!( self.serial.write(self.data[2]) )?;
-    //     nb::block!( self.serial.write(self.data[3]) )?;
-    //     nb::block!( self.serial.write(self.data[4]) )?;
-
-    //     Ok( () )
-    // }
 
     pub fn release(self) -> S {
         self.serial
@@ -494,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn ram_write_u8_led_easy() {
+    fn ram_write_led_easy() {
         let serial = FakeSerial::new();
 
         let mut tx = MessageTransmitter::new( serial );
@@ -517,7 +495,23 @@ mod tests {
         let mut tx = MessageTransmitter::new( serial );
         let servo = ServoId::default();
 
-        tx.send_ram_write( servo, TorqueControl, 0x60).unwrap();
+        tx.send_ram_write( servo, TorqueControl, Torque::Powered.into() ).unwrap();
+
+        let serial = tx.release();
+
+        let packet = [0xFF, 0xFF, 0x0A, 0xFD, 0x03, 0xA0, 0x5E, 0x34, 0x01, 0x60 ];
+
+        assert_eq!( serial.0, packet );        
+    }
+
+    #[test]
+    fn ram_write_torque_easy() {
+        let serial = FakeSerial::new();
+
+        let mut tx = MessageTransmitter::new( serial );
+        let servo = ServoId::default();
+
+        tx.set_torque( servo, Torque::Powered ).unwrap();
 
         let serial = tx.release();
 
