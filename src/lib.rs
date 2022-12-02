@@ -19,7 +19,7 @@ enum Command {
     EEPRead   = 0x02,
     RAMWrite  = 0x03,
     RAMRead   = 0x04,
-    // IJog      = 0x05,
+    IJog      = 0x05,
     SJog      = 0x06,
     Stat      = 0x07,
     Rollback  = 0x08,
@@ -69,17 +69,17 @@ pub enum JogMode {
     Velocity
 }
 
-struct SJogFlags(u8);
-impl SJogFlags {
+struct JogFlags(u8);
+impl JogFlags {
     fn new( mode: JogMode, color: Color ) -> Self {
-        SJogFlags( ( (mode as u8) << 1 ) | (color as u8) << 2 )
+        JogFlags( ( (mode as u8) << 1 ) | (color as u8) << 2 )
     }
 
     // fn color(&self) -> Color {
     //     ((self.0 & 0b00011100) >> 2).try_into().unwrap()
     // }
 }
-impl Into<u8> for SJogFlags {
+impl Into<u8> for JogFlags {
     fn into(self) -> u8 {
         self.0
     }
@@ -119,6 +119,13 @@ impl Into<u8> for IDSkip {
 
 pub struct BaudSkip(bool);
 impl Into<u8> for BaudSkip {
+    fn into(self) -> u8 {
+        self.0 as u8
+    }
+}
+
+pub struct Ticks(u8);
+impl Into<u8> for Ticks {
     fn into(self) -> u8 {
         self.0 as u8
     }
@@ -211,16 +218,32 @@ where S: Write<u8> {
         self.send_message_9( servo_id, Command::RAMRead, addr.into(), byte_count )
     }
 
-    pub fn send_sjog_position(&mut self, servo_id: ServoId, position: u16, playtime: u8, color: Color )  -> Result<(),S::Error> {
+    pub fn send_ijog_position(&mut self, servo_id: ServoId, position: u16, playtime: Ticks, color: Color )  -> Result<(),S::Error> {
         let position_bytes = position.to_le_bytes();
-        let flags = SJogFlags::new( JogMode::Position, color).into();
-        self.send_message_13( servo_id, Command::SJog, playtime, position_bytes[0], position_bytes[1], flags, servo_id.into() )
+        let flags = JogFlags::new( JogMode::Position, color).into();
+        self.send_message_13( servo_id, Command::IJog, position_bytes[0], position_bytes[1], flags, servo_id.into(), playtime.into() )
     }
 
-    pub fn send_sjog_continuous(&mut self, servo_id: ServoId, pwm: u16, playtime: u8, color: Color )  -> Result<(),S::Error> {
+    pub fn send_ijog_continuous(&mut self, servo_id: ServoId, pwm: u16, playtime: Ticks, color: Color )  -> Result<(),S::Error> {
         let pwm_bytes = pwm.to_le_bytes();
-        let flags = SJogFlags::new( JogMode::Velocity, color).into();
-        self.send_message_13( servo_id, Command::SJog, playtime, pwm_bytes[0], pwm_bytes[1], flags, servo_id.into() )
+        let flags = JogFlags::new( JogMode::Velocity, color).into();
+        self.send_message_13( servo_id, Command::IJog, pwm_bytes[0], pwm_bytes[1], flags, servo_id.into(), playtime.into() )
+    }
+
+    pub fn send_sjog_position(&mut self, servo_id: ServoId, position: u16, playtime: Ticks, color: Color )  -> Result<(),S::Error> {
+        let position_bytes = position.to_le_bytes();
+        let flags = JogFlags::new( JogMode::Position, color).into();
+        self.send_message_13( servo_id, Command::SJog, playtime.into(), position_bytes[0], position_bytes[1], flags, servo_id.into() )
+    }
+
+    // TODO
+    // pub fn send_sjog_positions(&mut self, servo_id: ServoId, position: u16, playtime: Ticks, color: Color )  -> Result<(),S::Error> {
+    // }
+
+    pub fn send_sjog_continuous(&mut self, servo_id: ServoId, pwm: u16, playtime: Ticks, color: Color )  -> Result<(),S::Error> {
+        let pwm_bytes = pwm.to_le_bytes();
+        let flags = JogFlags::new( JogMode::Velocity, color).into();
+        self.send_message_13( servo_id, Command::SJog, playtime.into(), pwm_bytes[0], pwm_bytes[1], flags, servo_id.into() )
     }
 
     pub fn send_stat(&mut self, servo_id: ServoId) -> Result<(),S::Error> {
@@ -345,6 +368,10 @@ where S: Write<u8> {
 
     pub fn set_torque_on(&mut self, servo: ServoId) -> Result<(),S::Error>{
         self.send_ram_write( servo, AddressU8::TorqueControl, 0x60)
+    }
+
+    pub fn set_position(&mut self, servo_id: ServoId, position: u16, playtime: Ticks, color: Color) -> Result<(),S::Error> {
+        self.send_sjog_position( servo_id, position, playtime, color )
     }
 
     // pub fn set_position(&mut self, servo_id: ServoId, pos: u16) -> Result<(),S::Error> {
@@ -590,8 +617,7 @@ mod tests {
 
         let servo = ServoId::default();
         let position = 512;
-        let playtime = 60;
-        tx.send_sjog_position( servo, position, playtime, Color::Green.into() ).unwrap();
+        tx.send_sjog_position( servo, position, Ticks(60), Color::Green ).unwrap();
 
         let serial = tx.release();
 
@@ -608,13 +634,45 @@ mod tests {
         let mut tx = MessageTransmitter::new( serial );
 
         let pwm = 320;
-        let color = Color::Blue;
-        let playtime = 60;
-        tx.send_sjog_continuous( ServoId::default(), pwm, playtime, color ).unwrap();
+        tx.send_sjog_continuous( ServoId::default(), pwm, Ticks(60), Color::Blue ).unwrap();
 
         let serial = tx.release();
 
         let packet = [0xFF, 0xFF, 0x0C, 0xFD, 0x06, 0x7C, 0x82, 0x3C, 0x40, 0x01, 0x0A, 0xFD ];
+
+        assert_eq!( serial.0, packet );        
+    }
+
+    #[test]
+    fn ijog_position() {
+        let serial = FakeSerial::new();
+
+        let mut tx = MessageTransmitter::new( serial );
+
+        let servo = ServoId::default();
+        let position = 512;
+        tx.send_ijog_position( servo, position, Ticks(60), Color::Green ).unwrap();
+
+        let serial = tx.release();
+
+        let packet = [0xFF, 0xFF, 0x0C, 0xFD, 0x05, 0x32, 0xCC, 0x00, 0x02, 0x04, 0xFD, 0x3C  ];
+
+        assert_eq!( serial.0, packet );                
+        
+    }
+
+    #[test]
+    fn ijog_cts() {
+        let serial = FakeSerial::new();
+
+        let mut tx = MessageTransmitter::new( serial );
+
+        let pwm = 320;
+        tx.send_ijog_continuous( ServoId::default(), pwm, Ticks(60), Color::Blue ).unwrap();
+
+        let serial = tx.release();
+
+        let packet = [0xFF, 0xFF, 0x0C, 0xFD, 0x05, 0x7E, 0x80, 0x40, 0x01, 0x0A, 0xFD, 0x3C ];
 
         assert_eq!( serial.0, packet );        
     }
