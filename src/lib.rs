@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), no_std)]
 use embedded_hal::serial::{Read,Write};
 // use core::fmt::Debug;
 // use core::fmt::Formatter;
@@ -655,8 +656,6 @@ impl AckMessageReader {
         if self.state != Complete {
             return AckMessage::Malformed;
         }
-        println!("command {}", self.buf[3]);
-        println!("length {}", self.buf[2]);
         if self.buf[4] == (Command::RAMRead as u8) | 0x40 {
             match self.buf[2] {
                 12 => return AckMessage::RAMReadU8(AckMessageRAMReadU8{ core: self}),
