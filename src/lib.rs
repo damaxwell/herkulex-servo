@@ -1,4 +1,4 @@
-use embedded_hal::serial::Write;
+use embedded_hal::serial::{Read,Write};
 
 mod address;
 pub use address::{Address,AddressU8, AddressU16, ReadOnlyAddressU8, ReadOnlyAddressU16};
@@ -8,7 +8,14 @@ pub use address::{ReadableEEPAddress, WritableEEPAddress};
 
 #[derive(Debug)]
 pub enum Error {
-    InvalidColorValue
+    InvalidColorValue,
+}
+
+#[derive(Debug)]
+pub enum AckReaderError {
+    Overflow,
+    Corrupt,
+    Incomplete
 }
 
 
@@ -98,7 +105,7 @@ impl Into<u8> for JogFlags {
 
 
 
-#[derive(Copy,Clone,Debug)]
+#[derive(PartialEq,Copy,Clone,Debug)]
 pub struct ServoId(u8);
 impl ServoId {
     const DEFAULT_SERVO_ID:u8 = 0xFD;
@@ -391,6 +398,177 @@ where S: Write<u8> {
 
 }
 
+#[derive(PartialEq,Copy,Clone)]
+pub enum AckMessageState {
+    Pending,
+    Corrupt,
+    Overflow,
+    Complete
+}
+use AckMessageState::{Pending, Corrupt, Overflow, Complete};
+
+
+pub enum AckMessage<'a> {
+    Unhappy,
+    Generic(AckMessageGeneric<'a>),
+    // Rollback(AckMessageRollback),
+    // Rewind(AckMessageReboot),
+    // RAMRead(AckMessageRAMRead),
+    // RAMWrite(AckMessageRAMWrite),
+    // EEPRead(AckMessageStat),
+    // EEPWrite(AckMessageStat),
+}
+
+pub struct AckMessageGeneric<'a> {
+    core: &'a AckMessageReader
+}
+
+impl<'a> AckMessageGeneric<'a> {
+    pub fn servo_id(&self) -> ServoId {
+        ServoId( self.core.buf[3] )
+    }
+
+    pub fn command(&self) -> u8 {
+        self.core.buf[4]
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.core.buf[7..self.core.p]
+    }
+}
+
+// pub struct AckMessageRAMRead(AckMessageReader);
+// impl AckMessageRAMRead {
+//     pub fn into_reader(self) -> AckMessageReader {
+//         self.0
+//     }
+    
+//     pub fn servo_id(&self) -> ServoId{
+//         ServoId( self.0.buf[3] )
+//     }
+
+//     pub fn address(&self) -> Address {
+//         Address( self.0.buf[] )
+//     }
+
+// }
+
+
+
+// TODO: pick the buffer size, up to 256 bytes
+const LEN:usize = 32;
+pub struct AckMessageReader {
+    buf:[u8; 32],
+    p: usize,
+    state: AckMessageState
+}
+impl AckMessageReader {
+
+    pub const fn new() -> Self {
+        let mut rv = AckMessageReader {
+            buf: [0;32],
+            p:0,
+            state: Pending
+        };
+        rv.buf[0] = 0xFF;
+        rv.buf[1] = 0xFF;
+        rv
+    }
+
+    pub fn clear(&mut self) {
+        self.p = 0;
+        self.state = Pending;
+    }
+
+    pub fn is_pending(&self) -> bool {
+        self.state == Pending
+    }
+
+    pub fn is_corrupt(&self) -> bool {
+        self.state == Corrupt
+    }
+
+    pub fn is_overflow(&self) -> bool {
+        self.state == Overflow
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.state == Complete
+    }
+
+    pub fn push(&mut self, b: u8) -> bool {
+        if self.state != Pending {
+            return false;
+        }
+
+        if self.p < 2 {
+            if b != 0xFF {
+                self.p = 0;
+            } else {
+                self.p += 1;
+            }
+            return true;
+        }
+
+        self.buf[self.p] = b;
+        
+        self.p += 1;
+        if self.p == self.buf[2].into() {
+
+            let mut cs1 = self.buf[2]^self.buf[3]^self.buf[4];
+
+            for b in  &self.buf[7..(self.p as usize)] {
+                cs1 = cs1^b;
+            }
+            cs1 = cs1 & 0xFE;
+            let cs2 = !cs1 & 0xFE;
+
+            if (cs1 != self.buf[5]) || (cs2 != self.buf[6]) {
+                self.state = Corrupt;
+            } else {
+                self.state = Complete;
+            }
+
+        } else if self.p == LEN {
+            self.state = Overflow;
+        }
+        true
+    }
+
+    pub fn push_from<S>(&mut self, serial: &mut S) -> Result<(),S::Error>
+    where S: Read<u8> {
+        while self.state == Pending {
+            match serial.read() {
+                Err(nb::Error::WouldBlock) => break,
+                Err(nb::Error::Other(e)) => return Err(e),
+                Ok(b) => {
+                    self.push(b);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn message(&self) -> AckMessage {
+        match self.state {
+            Pending | Corrupt | Overflow => AckMessage::Unhappy,
+            _ => AckMessage::Generic(AckMessageGeneric{ core:self })
+        }
+    }
+
+    // (ServoId, Command, DataSize)
+
+
+    // fn raw_data(&mut self) -> Option<(u8,u8,&[u8])> {
+    //     match self.state {
+    //         Complete => Some( (self.buf[3],self.buf[4],&self.buf[7..(self.buf[2] as usize)]) ),
+    //         _ => None
+    //     }
+    // }
+}
+
+
+
 
 #[cfg(test)]
 mod tests {
@@ -670,5 +848,52 @@ mod tests {
 
         assert_eq!( serial.0, packet );        
     }
+
+    #[test]
+    fn ack_message() {
+        let packet:[u8;15] = [0xFF, 0xFF, 0x0F, 0xFD, 0x42, 0x4C, 0xB2, 0x1E, 0x04, 0xB8, 0x01, 0x40, 0x1F, 0x00, 0x00];
+        let mut r = AckMessageReader::new();
+        for (k,&c) in packet.iter().enumerate() {
+            println!("{}",k);
+            r.push(c);
+            if k+1 < packet.len() {
+                assert!(r.is_pending());
+            } else {
+                assert!(r.is_complete());
+            }
+        }
+        let m = r.message();
+
+        match m {
+            AckMessage::Unhappy => panic!("Unreachable"),
+            AckMessage::Generic(m) => {
+                assert!(m.servo_id() == ServoId::default());
+            }
+        }
+    }
+
+    #[test]
+    fn ack_message_leading_garbage() {
+        let packet:[u8;17] = [0xC1, 0x1F, 0xFF, 0xFF, 0x0F, 0xFD, 0x42, 0x4C, 0xB2, 0x1E, 0x04, 0xB8, 0x01, 0x40, 0x1F, 0x00, 0x00];
+        let mut r = AckMessageReader::new();
+        for (k,&c) in packet.iter().enumerate() {
+            println!("{}",k);
+            r.push(c);
+            if k+1 < packet.len() {
+                assert!(r.is_pending());
+            } else {
+                assert!(r.is_complete());
+            }
+        }
+        let m = r.message();
+
+        match m {
+            AckMessage::Unhappy => panic!("Unreachable"),
+            AckMessage::Generic(m) => {
+                assert!(m.servo_id() == ServoId::default());
+            }
+        }
+    }
+
 
 }
