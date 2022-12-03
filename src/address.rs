@@ -2,6 +2,7 @@ use crate::MessageTransmitter;
 use crate::Write;
 use crate::{Command, ServoId};
 
+#[derive(PartialEq)]
 pub struct Address(pub u8);
 impl Into<u8> for Address {
     fn into(self) -> u8 {
