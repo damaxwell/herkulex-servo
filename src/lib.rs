@@ -437,12 +437,14 @@ pub enum AckMessageState {
 use AckMessageState::{Pending, Corrupt, Overflow, Complete};
 
 pub enum AckMessage<'a> {
+    Pending,
     Malformed,
     // Rollback(AckMessageRollback),
     // Rewind(AckMessageReboot),
     RAMReadU8(AckMessageRAMReadU8<'a>),
     RAMReadU16(AckMessageRAMReadU16<'a>),
     RAMReadOther(AckMessageRAMReadOther<'a>),
+    Stat(AckMessageStat<'a>),
     Other(AckMessageOther<'a>),
     // RAMWrite(AckMessageRAMWrite),
     // EEPRead(AckMessageStat),
@@ -556,6 +558,19 @@ impl<'a> AckMessageRAMReadOther<'a> {
         Status::new(self.core.buf[self.core.p-2], self.core.buf[self.core.p-1])
     }
 }
+pub struct AckMessageStat<'a> {
+    core: &'a AckMessageReader    
+}
+impl<'a> AckMessageStat<'a> {
+    pub fn servo_id(&self) -> ServoId {
+        ServoId( self.core.buf[3] )
+    }
+
+    pub fn status(&self) -> Status {
+        Status::new(self.core.buf[7], self.core.buf[8])
+    }
+}
+
 
 
 // TODO: pick the buffer size, up to 256 bytes
@@ -653,15 +668,18 @@ impl AckMessageReader {
     }
 
     pub fn message(&self) -> AckMessage {
-        if self.state != Complete {
+        if self.state == Pending {
+            return AckMessage::Pending;
+        } else if self.state != Complete {
             return AckMessage::Malformed;
-        }
-        if self.buf[4] == (Command::RAMRead as u8) | 0x40 {
+        } else if self.buf[4] == (Command::RAMRead as u8) | 0x40 {
             match self.buf[2] {
                 12 => return AckMessage::RAMReadU8(AckMessageRAMReadU8{ core: self}),
                 13 => return AckMessage::RAMReadU16( AckMessageRAMReadU16{core: self}),
                 _ => return AckMessage::RAMReadOther( AckMessageRAMReadOther{ core: self } )
             }
+        } else if self.buf[4] == (Command::Stat as u8) | 0x40 {
+            return AckMessage::Stat(AckMessageStat{ core: self } );
         }
         return AckMessage::Other(AckMessageOther{ core: self } )
     }
@@ -1040,6 +1058,27 @@ mod tests {
         let s = m.status();
         assert!(!s.has_error());
         assert!(s.in_position());
+        assert!(s.torque_on());
+    }
+
+    #[test]
+    fn ack_message_stat() {
+        let packet:[u8;9] = [ 0xFF, 0xFF, 0x09, 0xFD, 0x47, 0xF2, 0x0C, 0x00, 0x40];
+        let mut r = AckMessageReader::new();
+        for c in packet {
+            r.push(c);
+        }
+        assert!(r.is_complete());
+
+        let m = match r.message() {
+            AckMessage::Stat(m) => m,
+            _ => unreachable!()
+        };
+        assert!( m.servo_id() == ServoId::default() );
+        let s = m.status();
+        assert!(!s.has_error());
+        assert!(!s.in_position());
+        assert!(!s.moving());
         assert!(s.torque_on());
     }
 
