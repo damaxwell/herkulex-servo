@@ -1,6 +1,6 @@
 use embedded_hal::serial::{Read,Write};
-use core::fmt::Debug;
-use core::fmt::Formatter;
+// use core::fmt::Debug;
+// use core::fmt::Formatter;
 
 mod address;
 pub use address::{Address,AddressU8, AddressU16, ReadOnlyAddressU8, ReadOnlyAddressU16};
@@ -8,12 +8,11 @@ pub use address::{ReadableAddress, WritableAddress};
 pub use address::{EEPAddress,EEPAddressU8, EEPAddressU16, ReadOnlyEEPAddressU8};
 pub use address::{ReadableEEPAddress, WritableEEPAddress};
 
-#[derive(Debug)]
+// #[derive(Debug)]
 pub enum Error {
     InvalidColorValue,
 }
 
-#[derive(Debug)]
 pub enum AckReaderError {
     Overflow,
     Corrupt,
@@ -107,7 +106,7 @@ impl Into<u8> for JogFlags {
 
 
 
-#[derive(PartialEq,Copy,Clone,Debug)]
+#[derive(PartialEq,Copy,Clone)]
 pub struct ServoId(u8);
 impl ServoId {
     const DEFAULT_SERVO_ID:u8 = 0xFD;
@@ -448,17 +447,17 @@ pub enum AckMessage<'a> {
     // EEPRead(AckMessageStat),
     // EEPWrite(AckMessageStat),
 }
-impl<'a> Debug for AckMessage<'a> {
-   fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
-     match self {
-        AckMessage::Malformed => write!(f,"Malformed"),
-        AckMessage::RAMReadU8(_) => write!(f,"RAMReadU8"),
-        AckMessage::RAMReadU16(_) => write!(f,"RAMReadU16"),
-        AckMessage::RAMReadOther(_) => write!(f,"RAMReadOther"),
-        AckMessage::Other(_) => write!(f, "Other"),
-     }
-   }
-}
+// impl<'a> Debug for AckMessage<'a> {
+//    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
+//      match self {
+//         AckMessage::Malformed => write!(f,"Malformed"),
+//         AckMessage::RAMReadU8(_) => write!(f,"RAMReadU8"),
+//         AckMessage::RAMReadU16(_) => write!(f,"RAMReadU16"),
+//         AckMessage::RAMReadOther(_) => write!(f,"RAMReadOther"),
+//         AckMessage::Other(_) => write!(f, "Other"),
+//      }
+//    }
+// }
 
 pub struct AckMessageOther<'a> {
     core: &'a AckMessageReader
