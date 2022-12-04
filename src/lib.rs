@@ -112,7 +112,7 @@ impl Into<u8> for JogFlags {
 
 
 #[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
-pub struct ServoId(u8);
+pub struct ServoId(pub u8);
 impl ServoId {
     const DEFAULT_SERVO_ID:u8 = 0xFD;
     const ALL_SERVOS:u8 = 0xFE;
@@ -133,7 +133,7 @@ impl From<ServoId> for u8 {
 
 
 #[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
-pub struct IDSkip(bool);
+pub struct IDSkip(pub bool);
 impl Into<u8> for IDSkip {
     fn into(self) -> u8 {
         self.0 as u8
@@ -141,7 +141,7 @@ impl Into<u8> for IDSkip {
 }
 
 #[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
-pub struct BaudSkip(bool);
+pub struct BaudSkip(pub bool);
 impl Into<u8> for BaudSkip {
     fn into(self) -> u8 {
         self.0 as u8
@@ -149,7 +149,7 @@ impl Into<u8> for BaudSkip {
 }
 
 #[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
-pub struct Ticks(u8);
+pub struct Ticks(pub u8);
 impl Into<u8> for Ticks {
     fn into(self) -> u8 {
         self.0 as u8

@@ -193,7 +193,7 @@ impl WritableAddress<u16> for AddressU16 {
 }
 
 #[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
-pub struct EEPAddress(u8);
+pub struct EEPAddress(pub u8);
 impl Into<u8> for EEPAddress {
     fn into(self) -> u8 {
         self.0
