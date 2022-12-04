@@ -23,6 +23,7 @@ pub enum AckReaderError {
 
 
 #[repr(u8)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 enum Command {
     EEPWrite  = 0x01,
     EEPRead   = 0x02,
@@ -42,6 +43,7 @@ impl Into<u8> for Command {
 
 
 #[repr(u8)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub enum Color {
     Black = 0,
     Green = 1,
@@ -71,6 +73,7 @@ impl Into<u8> for Color {
 }
 
 #[repr(u8)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub enum Torque {
     FreeMoving = 0x00,
     BrakeEnabled = 0x40,
@@ -84,6 +87,7 @@ impl Into<u8> for Torque {
 
 
 #[repr(u8)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub enum JogMode {
     Position,
     Velocity
@@ -107,7 +111,7 @@ impl Into<u8> for JogFlags {
 
 
 
-#[derive(PartialEq,Copy,Clone)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub struct ServoId(u8);
 impl ServoId {
     const DEFAULT_SERVO_ID:u8 = 0xFD;
@@ -128,8 +132,7 @@ impl From<ServoId> for u8 {
 }
 
 
-
-
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub struct IDSkip(bool);
 impl Into<u8> for IDSkip {
     fn into(self) -> u8 {
@@ -137,6 +140,7 @@ impl Into<u8> for IDSkip {
     }
 }
 
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub struct BaudSkip(bool);
 impl Into<u8> for BaudSkip {
     fn into(self) -> u8 {
@@ -144,6 +148,7 @@ impl Into<u8> for BaudSkip {
     }
 }
 
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub struct Ticks(u8);
 impl Into<u8> for Ticks {
     fn into(self) -> u8 {
@@ -427,7 +432,7 @@ impl Status {
 }
 
 
-#[derive(PartialEq,Copy,Clone)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub enum AckMessageState {
     Pending,
     Corrupt,

@@ -2,7 +2,7 @@ use crate::MessageTransmitter;
 use crate::Write;
 use crate::{Command, ServoId};
 
-#[derive(PartialEq)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub struct Address(pub u8);
 impl Into<u8> for Address {
     fn into(self) -> u8 {
@@ -11,6 +11,7 @@ impl Into<u8> for Address {
 }
 
 #[repr(u8)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub enum AddressU8 {
     Id = 0,
     AckPolicy = 1,
@@ -56,6 +57,7 @@ impl Into<Address> for AddressU8 {
 
 
 #[repr(u8)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub enum AddressU16 {
     SaturatorSlope = 12,
     MaxPWM = 16,
@@ -91,6 +93,7 @@ impl Into<Address> for AddressU16 {
 
 
 #[repr(u8)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub enum ReadOnlyAddressU8 {
     // u8
     DesiredVelocity = 72,    
@@ -106,7 +109,8 @@ impl Into<Address> for ReadOnlyAddressU8 {
     }
 }
 
-
+#[repr(u8)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub enum ReadOnlyAddressU16 {
     // u16
     Voltage = 54,
@@ -188,6 +192,7 @@ impl WritableAddress<u16> for AddressU16 {
     }    
 }
 
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub struct EEPAddress(u8);
 impl Into<u8> for EEPAddress {
     fn into(self) -> u8 {
@@ -197,6 +202,7 @@ impl Into<u8> for EEPAddress {
 
 
 #[repr(u8)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub enum EEPAddressU8 {
     BaudRate = 4,
     // Reserved = 5,
@@ -232,6 +238,8 @@ impl Into<EEPAddress> for EEPAddressU8 {
     }
 }
 
+#[repr(u8)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub enum EEPAddressU16 {
     SaturatorSlope = 18,
     MaxPWM = 22,
@@ -257,6 +265,7 @@ impl Into<EEPAddress> for EEPAddressU16 {
 
 
 #[repr(u8)]
+#[derive(PartialEq,Copy,Clone,Eq,Ord,PartialOrd,Hash)]
 pub enum ReadOnlyEEPAddressU8 {
     ModelNumber1 = 0,
     ModelNumber2 = 1,
