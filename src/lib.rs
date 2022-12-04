@@ -406,8 +406,8 @@ where S: Write<u8> {
 }
 
 pub struct Status {
-    error: u8,
-    detail: u8
+    pub error: u8,
+    pub detail: u8
 }
 impl Status {
     pub fn new(error: u8, detail: u8) -> Self {
