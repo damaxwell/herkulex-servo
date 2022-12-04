@@ -48,10 +48,10 @@ pub enum Color {
     Black = 0,
     Green = 1,
     Blue = 2,
-    Yellow = 3,
+    Yellow = 5,
     Red = 4,
-    Magenta = 5,
-    Cyan = 6,
+    Magenta = 6,
+    Cyan = 3,
     White = 7
 }
 impl TryInto<Color> for u8 {
